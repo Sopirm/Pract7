@@ -35,38 +35,47 @@ const ASSETS = [
 
 // Перехват запросов и возврат из кэша
 self.addEventListener('fetch', event => {
-   event.respondWith(
-       caches.match(event.request)
-           .then(response => {
-               // Если ресурс найден в кэше, возвращаем его
-               if (response) {
-                   return response;
-               }
-               
-               // Если ресурса нет в кэше, делаем сетевой запрос
-               return fetch(event.request)
-                   .then(networkResponse => {
-                       // Сохраняем копию ответа в кэш
-                       if (networkResponse && networkResponse.status === 200) {
-                           const responseToCache = networkResponse.clone();
-                           caches.open(CACHE_NAME)
-                               .then(cache => {
-                                   cache.put(event.request, responseToCache);
-                               });
-                       }
-                       return networkResponse;
-                   })
-                   .catch(() => {
-                       // Если произошла ошибка сети и это навигационный запрос,
-                       // возвращаем главную страницу из кэша
-                       if (event.request.mode === 'navigate') {
-                           return caches.match('./index.html');
-                       }
-                       return new Response('Нет соединения с сетью', {
-                           status: 503,
-                           headers: { 'Content-Type': 'text/plain' }
-                       });
-                   });
-           })
-   );
-}); 
+    // Skip requests with unsupported schemes (chrome-extension:, chrome:, etc.)
+    if (!event.request.url.startsWith('http')) {
+        return;
+    }
+
+    event.respondWith(
+        caches.match(event.request)
+            .then(response => {
+                // If resource is found in cache, return it
+                if (response) {
+                    return response;
+                }
+                
+                // If not in cache, make network request
+                return fetch(event.request)
+                    .then(networkResponse => {
+                        // Cache a copy of the response if valid
+                        if (networkResponse && networkResponse.status === 200) {
+                            const responseToCache = networkResponse.clone();
+                            caches.open(CACHE_NAME)
+                                .then(cache => {
+                                    try {
+                                        cache.put(event.request, responseToCache);
+                                    } catch (error) {
+                                        console.warn('Failed to cache:', event.request.url, error);
+                                    }
+                                });
+                        }
+                        return networkResponse;
+                    })
+                    .catch(() => {
+                        // If network fails and it's a navigation request,
+                        // return the cached index.html
+                        if (event.request.mode === 'navigate') {
+                            return caches.match('./index.html');
+                        }
+                        return new Response('Нет соединения с сетью', {
+                            status: 503,
+                            headers: { 'Content-Type': 'text/plain' }
+                        });
+                    });
+            })
+    );
+});
